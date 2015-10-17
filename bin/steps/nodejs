@@ -1,0 +1,212 @@
+#!/usr/bin/env bash
+# bin/compile <build-dir> <cache-dir> <env-dir>
+
+BUILD_DIR=${1:-}
+CACHE_DIR=${2:-}
+ENV_DIR=${3:-}
+BP_DIR=$(cd $(dirname ${0:-}); cd ..; pwd)
+
+get_os() {
+  uname | tr A-Z a-z
+}
+
+get_cpu() {
+  if [[ "$(uname -p)" = "i686" ]]; then
+    echo "x86"
+  else
+    echo "x64"
+  fi
+}
+
+os=$(get_os)
+cpu=$(get_cpu)
+export JQ="$BP_DIR/vendor/jq-$os"
+
+read_json() {
+  local file=$1
+  local key=$2
+  if test -f $file; then
+    cat $file | $JQ --raw-output "$key // \"\"" || return 1
+  else
+    echo ""
+  fi
+}
+
+warnings=$(mktemp -t heroku-buildpack-nodejs-XXXX)
+
+failure_message() {
+  local warn="$(cat $warnings)"
+  echo ""
+  echo "We're sorry this build is failing! You can troubleshoot common issues here:"
+  echo "https://devcenter.heroku.com/articles/troubleshooting-node-deploys"
+  echo ""
+  if [ "$warn" != "" ]; then
+    echo "Some possible problems:"
+    echo ""
+    echo "$warn"
+  else
+    echo "If you're stuck, please submit a ticket so we can help:"
+    echo "https://help.heroku.com/"
+  fi
+  echo ""
+  echo "Love,"
+  echo "Heroku"
+  echo ""
+}
+
+fail_invalid_package_json() {
+  if ! cat ${1:-}/package.json | $JQ "." 1>/dev/null; then
+    error "Unable to parse package.json"
+    return 1
+  fi
+}
+
+warning() {
+  local tip=${1:-}
+  local url=${2:-https://devcenter.heroku.com/articles/nodejs-support}
+  echo "- $tip" >> $warnings
+  echo "  $url" >> $warnings
+  echo "" >> $warnings
+}
+
+warn_node_engine() {
+  local node_engine=${1:-}
+  if [ "$node_engine" == "" ]; then
+    warning "Node version not specified in package.json" "https://devcenter.heroku.com/articles/nodejs-support#specifying-a-node-js-version"
+  elif [ "$node_engine" == "*" ]; then
+    warning "Dangerous semver range (*) in engines.node" "https://devcenter.heroku.com/articles/nodejs-support#specifying-a-node-js-version"
+  elif [ ${node_engine:0:1} == ">" ]; then
+    warning "Dangerous semver range (>) in engines.node" "https://devcenter.heroku.com/articles/nodejs-support#specifying-a-node-js-version"
+  fi
+}
+
+warn_prebuilt_modules() {
+  local build_dir=${1:-}
+  if [ -e "$build_dir/node_modules" ]; then
+    warning "node_modules checked into source control" "https://docs.npmjs.com/misc/faq#should-i-check-my-node-modules-folder-into-git"
+  fi
+}
+
+warn_missing_package_json() {
+  local build_dir=${1:-}
+  if ! [ -e "$build_dir/package.json" ]; then
+    warning "No package.json found"
+  fi
+}
+
+warn_old_npm() {
+  local npm_version="$(npm --version)"
+  if [ "${npm_version:0:1}" -lt "2" ]; then
+    local latest_npm="$(curl --silent --get https://semver.herokuapp.com/npm/stable)"
+    warning "This version of npm ($npm_version) has several known issues - consider upgrading to the latest release ($latest_npm)" "https://devcenter.heroku.com/articles/nodejs-support#specifying-an-npm-version"
+  fi
+}
+
+warn_untracked_dependencies() {
+  local log_file="$1"
+  if grep -qi 'gulp: not found' "$log_file"; then
+    warning "Gulp may not be tracked in package.json" "https://devcenter.heroku.com/articles/troubleshooting-node-deploys#ensure-you-aren-t-relying-on-untracked-dependencies"
+  fi
+  if grep -qi 'grunt: not found' "$log_file"; then
+    warning "Grunt may not be tracked in package.json" "https://devcenter.heroku.com/articles/troubleshooting-node-deploys#ensure-you-aren-t-relying-on-untracked-dependencies"
+  fi
+  if grep -qi 'bower: not found' "$log_file"; then
+    warning "Bower may not be tracked in package.json" "https://devcenter.heroku.com/articles/troubleshooting-node-deploys#ensure-you-aren-t-relying-on-untracked-dependencies"
+  fi
+}
+
+warn_angular_resolution() {
+  local log_file="$1"
+  if grep -qi 'Unable to find suitable version for angular' "$log_file"; then
+    warning "Bower may need a resolution hint for angular" "https://github.com/bower/bower/issues/1746"
+  fi
+}
+
+needs_resolution() {
+  local semver=$1
+  if ! [[ "$semver" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+install_nodejs() {
+  local version="$1"
+  local dir="$2"
+
+  if needs_resolution "$version"; then
+    echo "Resolving node version ${version:-(latest stable)} via semver.io..."
+    local version=$(curl --silent --get --data-urlencode "range=${version}" https://semver.herokuapp.com/node/resolve)
+  fi
+
+  echo "Downloading and installing node $version..."
+  local download_url="http://s3pository.heroku.com/node/v$version/node-v$version-$os-$cpu.tar.gz"
+  curl "$download_url" --silent --fail -o /tmp/node.tar.gz || (echo "Unable to download node $version; does it exist?" && false)
+  tar xzf /tmp/node.tar.gz -C /tmp
+  mv /tmp/node-v$version-$os-$cpu/* $dir
+  chmod +x $dir/bin/*
+}
+
+install_iojs() {
+  local version="$1"
+  local dir="$2"
+
+  if needs_resolution "$version"; then
+    echo "Resolving iojs version ${version:-(latest stable)} via semver.io..."
+    version=$(curl --silent --get --data-urlencode "range=${version}" https://semver.herokuapp.com/iojs/resolve)
+  fi
+
+  echo "Downloading and installing iojs $version..."
+  local download_url="https://iojs.org/dist/v$version/iojs-v$version-$os-$cpu.tar.gz"
+  curl "$download_url" --silent --fail -o /tmp/node.tar.gz || (echo "Unable to download iojs $version; does it exist?" && false)
+  tar xzf /tmp/node.tar.gz -C /tmp
+  mv /tmp/iojs-v$version-$os-$cpu/* $dir
+  chmod +x $dir/bin/*
+}
+
+install_npm() {
+  local version="$1"
+
+  if [ "$version" == "" ]; then
+    echo "Using default npm version: `npm --version`"
+  else
+    if needs_resolution "$version"; then
+      echo "Resolving npm version ${version} via semver.io..."
+      version=$(curl --silent --get --data-urlencode "range=${version}" https://semver.herokuapp.com/npm/resolve)
+    fi
+    if [[ `npm --version` == "$version" ]]; then
+      echo "npm `npm --version` already installed with node"
+    else
+      echo "Downloading and installing npm $version (replacing version `npm --version`)..."
+      npm install --unsafe-perm --quiet -g npm@$version 2>&1 >/dev/null
+    fi
+  fi
+}
+
+install_bins() {
+  local node_engine=$(read_json "$BUILD_DIR/frontend/package.json" ".engines.node")
+  local npm_engine=$(read_json "$BUILD_DIR/frontend/package.json" ".engines.npm")
+
+  if [ -n "$iojs_engine" ]; then
+    echo "engines.iojs (package.json):  $iojs_engine (iojs)"
+  else
+    echo "engines.node (package.json):  ${node_engine:-unspecified}"
+  fi
+  echo "engines.npm (package.json):   ${npm_engine:-unspecified (use default)}"
+  echo ""
+
+  if [ -n "$iojs_engine" ]; then
+    warn_node_engine "$iojs_engine"
+    install_iojs "$iojs_engine" "$BUILD_DIR/.heroku/node"
+    echo "Using bundled npm version for iojs compatibility: `npm --version`"
+  else
+    warn_node_engine "$node_engine"
+    install_nodejs "$node_engine" "$BUILD_DIR/.heroku/node"
+    install_npm "$npm_engine" "$BUILD_DIR/.heroku/node"
+  fi
+  warn_old_npm
+}
+
+header "Installing binaries"
+install_bins | output "$LOG_FILE"

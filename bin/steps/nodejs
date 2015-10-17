@@ -7,6 +7,7 @@ ENV_DIR=${3:-}
 BP_DIR=$(cd $(dirname ${0:-}); cd ..; pwd)
 
 mkdir -p $BUILD_DIR/.heroku/node
+PATH=$PATH:$BUILD_DIR/.heroku/node/bin
 
 get_os() {
   uname | tr A-Z a-z

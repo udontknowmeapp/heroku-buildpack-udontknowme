@@ -157,6 +157,9 @@ set -e
 
 mkdir -p $(dirname $PROFILE_PATH)
 
+# Build Frontend with NodeJS
+source $BIN_DIR/steps/nodejs
+
 # Install Python.
 source $BIN_DIR/steps/python
 
@@ -183,10 +186,6 @@ source $BIN_DIR/steps/pip-install
 
 # Django collectstatic support.
 sub-env $BIN_DIR/steps/collectstatic
-
-# Build Frontend with NodeJS
-source $BIN_DIR/steps/nodejs
-
 
 # ### Finalize
 #

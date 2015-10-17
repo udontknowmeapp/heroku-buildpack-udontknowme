@@ -209,4 +209,4 @@ install_bins() {
 }
 
 echo "--------------> Installing node binaries"
-install_bins | output "$LOG_FILE"
+install_bins

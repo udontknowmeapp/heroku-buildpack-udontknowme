@@ -158,7 +158,7 @@ set -e
 mkdir -p $(dirname $PROFILE_PATH)
 
 # Build Frontend with NodeJS
-source $BIN_DIR/steps/nodejs
+# source $BIN_DIR/steps/nodejs
 
 # Install Python.
 source $BIN_DIR/steps/python

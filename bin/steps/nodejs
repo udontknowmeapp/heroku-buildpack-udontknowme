@@ -208,5 +208,5 @@ install_bins() {
   warn_old_npm
 }
 
-header "Installing binaries"
+echo "--------------> Installing node binaries"
 install_bins | output "$LOG_FILE"

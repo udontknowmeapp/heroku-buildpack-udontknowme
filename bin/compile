@@ -157,8 +157,12 @@ set -e
 
 mkdir -p $(dirname $PROFILE_PATH)
 
+echo "-----> Before nodejs"
+echo "$(pwd)"
 # Build Frontend with NodeJS
-# source $BIN_DIR/steps/nodejs
+source $BIN_DIR/steps/nodejs
+echo "------> After nodejs"
+echo "$(pwd)"
 
 # Install Python.
 source $BIN_DIR/steps/python

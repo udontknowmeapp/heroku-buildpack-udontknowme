@@ -4,9 +4,6 @@ source $BIN_DIR/utils
 
 BP_DIR=$(cd $(dirname ${0:-}); cd ..; pwd)
 
-mkdir -p $BUILD_DIR/.heroku/node
-PATH=$PATH:$BUILD_DIR/.heroku/node/bin
-
 get_os() {
   uname | tr A-Z a-z
 }
@@ -210,9 +207,21 @@ install_bins() {
 }
 
 echo "--------------> Installing node binaries"
+
 bpwatch start nodejs_install
+# remove old node shit if it exists
+if [ -d $BUILD_DIR/.heroku/node ] ; then
+  rm -rf $BUILD_DIR/.heroku/node
+fi
+
+# createa  our node dir and add it to the path
+mkdir -p $BUILD_DIR/.heroku/node
+PATH=$PATH:$BUILD_DIR/.heroku/node/bin
+
 install_bins
+
 cd $BUILD_DIR/frontend/
+echo "--------------> Installing nodejs dependencies"
 npm install
 npm run postinstall
 cd $APP_DIR

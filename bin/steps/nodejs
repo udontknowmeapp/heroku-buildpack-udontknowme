@@ -212,4 +212,7 @@ install_bins() {
 echo "--------------> Installing node binaries"
 bpwatch start nodejs_install
 install_bins
+cd $BUILD_DIR/frontend/
+npm run postinstall
+cd $APP_DIR
 bpwatch stop nodejs_install

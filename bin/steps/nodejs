@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# bin/nodejs <build-dir> <cache-dir> <env-dir>
 
-BUILD_DIR=${1:-}
-CACHE_DIR=${2:-}
-ENV_DIR=${3:-}
+source $BIN_DIR/utils
+
 BP_DIR=$(cd $(dirname ${0:-}); cd ..; pwd)
 
 mkdir -p $BUILD_DIR/.heroku/node
@@ -212,4 +210,6 @@ install_bins() {
 }
 
 echo "--------------> Installing node binaries"
+bpwatch start nodejs_install
 install_bins
+bpwatch stop nodejs_install
